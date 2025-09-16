@@ -1,0 +1,145 @@
+Ah entendi! [[memory:693145]] Você quer testar o **DASHBOARD multi-tenant** que permite login de diferentes clientes com credenciais separadas, não a landing page de vendas.
+
+# 🔍 PROMPT DE TESTE PARA DASHBOARD MULTI-TENANT
+
+## TAREFA: TESTAR SISTEMA DE LOGIN E CREDENCIAIS SEPARADAS
+
+Preciso que você teste o dashboard implementado para verificar se o sistema multi-tenant está funcionando corretamente:
+
+---
+
+## ✅ CHECKLIST DE TESTES OBRIGATÓRIOS
+
+### **1. TESTE DE LOGIN INDIVIDUALIZADO**
+- [ ] Sistema permite criar/cadastrar diferentes clientes ✓
+- [ ] Cada cliente tem login único (email/senha) ✓
+- [ ] Login de um cliente não acessa dados de outro ✓
+- [ ] Logout funciona corretamente ✓
+- [ ] Sessão mantém cliente logado correto ✓
+
+**RESULTADO:** [ ] ✅ Login funcionando | [ ] ❌ Problemas de autenticação
+
+### **2. TESTE DE ISOLAMENTO DE DADOS**
+
+**Crie 2 clientes de teste:** 
+- Cliente A: "Empresa Teste A"
+- Cliente B: "Empresa Teste B"
+
+Verificar:
+- [ ] Cliente A só vê dados da Empresa A ✓
+- [ ] Cliente B só vê dados da Empresa B ✓
+- [ ] Não há vazamento de dados entre clientes ✓
+- [ ] Dashboard mostra informações específicas do cliente logado ✓
+
+**RESULTADO:** [ ] ✅ Isolamento perfeito | [ ] ❌ Dados se misturam
+
+### **3. TESTE DE CONFIGURAÇÃO DE CREDENCIAIS**
+
+**Para cada cliente, verificar se é possível configurar:**
+
+- [ ] **Supabase:** URL e Key específicos do cliente ✓
+- [ ] **Google Calendar:** Credenciais API do cliente ✓  
+- [ ] **Google Meet:** Integração do cliente ✓
+- [ ] **WhatsApp/Evolution:** Token do cliente ✓
+- [ ] **N8N Webhook:** URL específica do cliente ✓
+
+**TESTE:** Configurar credenciais diferentes para Cliente A e Cliente B
+
+**RESULTADO:** [ ] ✅ Credenciais separadas | [ ] ❌ Credenciais se confundem
+
+### **4. TESTE DE CONEXÃO DINÂMICA**
+
+- [ ] Dashboard conecta no Supabase correto baseado no cliente logado ✓
+- [ ] Queries puxam dados do banco específico do cliente ✓
+- [ ] N8N recebe dados do cliente correto ✓
+- [ ] Google Calendar mostra agenda do cliente correto ✓
+
+**TESTE:** Fazer uma ação no Cliente A e verificar se não afeta Cliente B
+
+**RESULTADO:** [ ] ✅ Conexões corretas | [ ] ❌ Conexões erradas
+
+### **5. TESTE DE INTERFACE DE CONFIGURAÇÃO**
+
+- [ ] Existe tela para você (admin) configurar credenciais ✓
+- [ ] Interface permite inserir/editar todas as credenciais ✓
+- [ ] Credenciais são salvas criptografadas ✓
+- [ ] Interface mostra qual cliente está sendo configurado ✓
+
+**RESULTADO:** [ ] ✅ Interface funcionando | [ ] ❌ Interface com problemas
+
+### **6. TESTE DE SEGURANÇA**
+
+- [ ] Credenciais não aparecem em texto plano ✓
+- [ ] URLs de API são criptografadas ✓
+- [ ] Não é possível acessar dados de outro cliente via URL ✓
+- [ ] Sessão expira adequadamente ✓
+
+**RESULTADO:** [ ] ✅ Seguro | [ ] ❌ Vulnerabilidades
+
+---
+
+## 📋 CENÁRIO DE TESTE ESPECÍFICO
+
+**Execute este teste passo a passo:**
+
+### **PASSO 1: Criar Clientes**
+```
+1. Criar Cliente A: "Clínica Exemplo A"
+2. Criar Cliente B: "Consultoria Exemplo B"  
+3. Definir login/senha para cada um
+```
+
+### **PASSO 2: Configurar Credenciais Diferentes**
+```
+CLIENTE A:
+- Supabase URL: https://projeto-a.supabase.co
+- Google Calendar: credencial-a@gmail.com
+- N8N Webhook: https://n8n.com/webhook/cliente-a
+
+CLIENTE B:  
+- Supabase URL: https://projeto-b.supabase.co
+- Google Calendar: credencial-b@gmail.com
+- N8N Webhook: https://n8n.com/webhook/cliente-b
+```
+
+### **PASSO 3: Testar Isolamento**
+```
+1. Login como Cliente A
+2. Verificar se mostra apenas dados do projeto-a
+3. Logout e login como Cliente B  
+4. Verificar se mostra apenas dados do projeto-b
+5. Confirmar que não há mistura de dados
+```
+
+---
+
+## 🚨 PROBLEMAS PARA REPORTAR
+
+**Se encontrar qualquer problema, reporte assim:**
+
+```
+PROBLEMA: ________________________
+LOCALIZAÇÃO: _____________________
+CLIENTE AFETADO: _________________
+COMO REPRODUZIR: ________________
+ERRO EXATO: _____________________
+```
+
+---
+
+## 🎯 RESULTADO ESPERADO
+
+**APROVAÇÃO FINAL:** O dashboard deve:
+1. ✅ Permitir login separado por cliente
+2. ✅ Manter dados completamente isolados  
+3. ✅ Conectar nas credenciais específicas de cada cliente
+4. ✅ Permitir configuração fácil das credenciais
+5. ✅ Ser seguro (sem vazamentos)
+
+**SE TUDO FUNCIONAR:** Confirme que está pronto para produção!
+
+**SE HOUVER PROBLEMAS:** Liste exatamente o que não está funcionando.
+
+---
+
+**EXECUTE ESTES TESTES NO DASHBOARD E ME REPORTE O STATUS! 🚀**
