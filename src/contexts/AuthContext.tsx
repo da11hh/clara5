@@ -80,33 +80,124 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     setIsLoading(false);
   }, []);
 
+  // Demo credentials for development/testing
+  const demoCredentials = [
+    {
+      email: 'admin@empresaa.com',
+      password: '123456',
+      user: {
+        id: '1',
+        email: 'admin@empresaa.com',
+        name: 'Admin Empresa A',
+        role: 'admin' as const
+      },
+      client: {
+        id: '1',
+        name: 'Empresa A',
+        email: 'admin@empresaa.com',
+        plan_type: 'enterprise' as const
+      }
+    },
+    {
+      email: 'gestor@empresab.com',
+      password: 'senha123',
+      user: {
+        id: '2',
+        email: 'gestor@empresab.com',
+        name: 'Gestor Empresa B',
+        role: 'viewer' as const
+      },
+      client: {
+        id: '2',
+        name: 'Empresa B',
+        email: 'gestor@empresab.com',
+        plan_type: 'pro' as const
+      }
+    },
+    {
+      email: 'executivo@empresa.com',
+      password: '123456',
+      user: {
+        id: '3',
+        email: 'executivo@empresa.com',
+        name: 'Executivo Demo',
+        role: 'admin' as const
+      },
+      client: {
+        id: '3',
+        name: 'Empresa Demo',
+        email: 'executivo@empresa.com',
+        plan_type: 'starter' as const
+      }
+    }
+  ];
+
   const login = async (email: string, password: string): Promise<boolean> => {
     setIsLoading(true);
     
     try {
-      const response = await apiRequest('/auth/login', {
-        method: 'POST',
-        body: JSON.stringify({ email, password })
-      });
+      // Check demo credentials first
+      const demoUser = demoCredentials.find(
+        cred => cred.email === email && cred.password === password
+      );
       
-      if (response.success) {
-        // Salvar token
-        localStorage.setItem('auth_token', response.token);
+      if (demoUser) {
+        // Generate demo token
+        const token = `demo_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         
-        // Salvar dados do usuário
-        setUser(response.user);
-        localStorage.setItem('user_data', JSON.stringify(response.user));
+        // Demo credentials configuration
+        const demoCredentialsConfig: ClientCredentials = {
+          google_calendar: true,
+          google_meet: true,
+          whatsapp: true,
+          evolution_api: true,
+          supabase_configured: true,
+          n8n_configured: true
+        };
         
-        // Salvar dados do cliente
-        setClient(response.client);
-        localStorage.setItem('client_data', JSON.stringify(response.client));
+        // Save demo data
+        localStorage.setItem('auth_token', token);
+        localStorage.setItem('user_data', JSON.stringify(demoUser.user));
+        localStorage.setItem('client_data', JSON.stringify(demoUser.client));
+        localStorage.setItem('client_credentials', JSON.stringify(demoCredentialsConfig));
         
-        // Salvar flags de credenciais
-        setCredentials(response.credentials);
-        localStorage.setItem('client_credentials', JSON.stringify(response.credentials));
+        // Update state
+        setUser(demoUser.user);
+        setClient(demoUser.client);
+        setCredentials(demoCredentialsConfig);
         
         setIsLoading(false);
         return true;
+      }
+      
+      // If not demo credentials, try API request (fallback for production)
+      try {
+        const response = await apiRequest('/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({ email, password })
+        });
+        
+        if (response.success) {
+          // Salvar token
+          localStorage.setItem('auth_token', response.token);
+          
+          // Salvar dados do usuário
+          setUser(response.user);
+          localStorage.setItem('user_data', JSON.stringify(response.user));
+          
+          // Salvar dados do cliente
+          setClient(response.client);
+          localStorage.setItem('client_data', JSON.stringify(response.client));
+          
+          // Salvar flags de credenciais
+          setCredentials(response.credentials);
+          localStorage.setItem('client_credentials', JSON.stringify(response.credentials));
+          
+          setIsLoading(false);
+          return true;
+        }
+      } catch (apiError) {
+        console.log('API unavailable, usando apenas credenciais demo');
       }
       
       setIsLoading(false);
