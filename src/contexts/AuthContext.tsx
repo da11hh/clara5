@@ -211,13 +211,57 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
   const updateCredentials = async (type: string, newCredentials: any): Promise<boolean> => {
     try {
-      await apiRequest(`/credentials/${type}`, {
-        method: 'PUT',
-        body: JSON.stringify(newCredentials)
-      });
+      // Try API request first (for production backend)
+      try {
+        await apiRequest(`/credentials/${type}`, {
+          method: 'PUT',
+          body: JSON.stringify(newCredentials)
+        });
+        
+        // Refresh credential flags after successful update
+        await refreshCredentialFlags();
+        
+        return true;
+      } catch (apiError) {
+        console.log('API unavailable, using local storage for credentials');
+      }
       
-      // Refresh credential flags after successful update
-      await refreshCredentialFlags();
+      // Fallback to local storage for demo/development
+      if (!user || !client) {
+        console.error('User or client not logged in');
+        return false;
+      }
+      
+      // Save credentials locally per client
+      const clientCredentialsKey = `credentials_${client.id}`;
+      const existingCredentials = JSON.parse(localStorage.getItem(clientCredentialsKey) || '{}');
+      
+      // Update specific credential type
+      existingCredentials[type] = newCredentials;
+      localStorage.setItem(clientCredentialsKey, JSON.stringify(existingCredentials));
+      
+      // Update credential flags
+      const updatedFlags = { ...credentials };
+      if (type === 'supabase') {
+        updatedFlags.supabase_configured = true;
+        // Update Supabase environment variables for immediate use
+        if (newCredentials.url && newCredentials.anon_key) {
+          (window as any).VITE_SUPABASE_URL = newCredentials.url;
+          (window as any).VITE_SUPABASE_ANON_KEY = newCredentials.anon_key;
+        }
+      } else if (type === 'google_calendar') {
+        updatedFlags.google_calendar = true;
+        updatedFlags.google_meet = true;
+      } else if (type === 'whatsapp') {
+        updatedFlags.whatsapp = true;
+      } else if (type === 'evolution_api') {
+        updatedFlags.evolution_api = true;
+      } else if (type === 'n8n') {
+        updatedFlags.n8n_configured = true;
+      }
+      
+      setCredentials(updatedFlags);
+      localStorage.setItem('client_credentials', JSON.stringify(updatedFlags));
       
       return true;
     } catch (error) {
