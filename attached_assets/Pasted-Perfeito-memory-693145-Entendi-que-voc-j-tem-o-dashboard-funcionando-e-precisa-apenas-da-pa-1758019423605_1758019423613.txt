@@ -1,0 +1,403 @@
+Perfeito! [[memory:693145]] Entendi que você já tem o dashboard funcionando e precisa apenas da **parte multi-tenant** para gerenciar credenciais separadas por cliente. Vou focar especificamente nessa implementação.
+
+## 🎯 IMPLEMENTAÇÃO FOCADA: MULTI-TENANT PARA DASHBOARD EXISTENTE
+
+### **O QUE VOCÊ PRECISA ADICIONAR AO SEU DASHBOARD ATUAL:**
+
+## 1. 📋 TABELA DE CLIENTES (No seu Supabase principal)
+
+```sql
+-- Adicionar ao seu Supabase atual
+CREATE TABLE IF NOT EXISTS clients (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    client_name TEXT NOT NULL,
+    client_email TEXT UNIQUE NOT NULL,
+    client_domain TEXT,
+    plan_type TEXT DEFAULT 'starter',
+    
+    -- Credenciais específicas por cliente (criptografadas)
+    google_calendar_credentials TEXT,
+    google_meet_credentials TEXT,
+    whatsapp_credentials TEXT,
+    evolution_api_credentials TEXT,
+    
+    -- Configurações específicas
+    supabase_url TEXT, -- URL do projeto Supabase do cliente
+    supabase_key TEXT, -- Chave anon do projeto do cliente
+    n8n_webhook_url TEXT,
+    
+    -- Status
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Usuários que podem acessar cada cliente
+CREATE TABLE IF NOT EXISTS client_users (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    client_id UUID REFERENCES clients(id) ON DELETE CASCADE,
+    user_email TEXT NOT NULL,
+    user_password_hash TEXT NOT NULL,
+    role TEXT DEFAULT 'admin',
+    last_login TIMESTAMP,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Índices
+CREATE INDEX idx_client_users_email ON client_users(user_email);
+CREATE INDEX idx_client_users_client ON client_users(client_id);
+```
+
+## 2. 🔧 MODIFICAÇÃO NO SEU CÓDIGO EXISTENTE
+
+### **A. Adicionar Sistema de Login Multi-Cliente**
+
+```python
+# No seu arquivo principal (onde está o login atual)
+
+import hashlib
+import os
+from cryptography.fernet import Fernet
+
+# Chave de criptografia (adicionar ao .env)
+ENCRYPTION_KEY = os.getenv('ENCRYPTION_KEY', Fernet.generate_key().decode())
+cipher = Fernet(ENCRYPTION_KEY.encode())
+
+def encrypt_data(data):
+    """Criptografa dados sensíveis"""
+    import json
+    json_data = json.dumps(data)
+    encrypted = cipher.encrypt(json_data.encode())
+    return encrypted.decode()
+
+def decrypt_data(encrypted_data):
+    """Descriptografa dados"""
+    if not encrypted_data:
+        return None
+    try:
+        decrypted = cipher.decrypt(encrypted_data.encode())
+        import json
+        return json.loads(decrypted.decode())
+    except:
+        return None
+
+# Modificar sua função de login existente
+def login_user(email, password):
+    """Login que identifica o cliente específico"""
+    
+    # Hash da senha
+    password_hash = hashlib.sha256(password.encode()).hexdigest()
+    
+    # Buscar usuário e cliente
+    result = supabase.table('client_users').select(
+        '''
+        id, user_email, role, client_id,
+        clients (
+            id, client_name, plan_type, is_active,
+            google_calendar_credentials,
+            google_meet_credentials, 
+            whatsapp_credentials,
+            supabase_url,
+            supabase_key
+        )
+        '''
+    ).eq('user_email', email).eq('user_password_hash', password_hash).execute()
+    
+    if result.data and result.data[0]['clients']['is_active']:
+        user_data = result.data[0]
+        client_data = user_data['clients']
+        
+        # Salvar na sessão (ou como você gerencia estado)
+        session_data = {
+            'user_id': user_data['id'],
+            'user_email': email,
+            'client_id': client_data['id'],
+            'client_name': client_data['client_name'],
+            'client_credentials': {
+                'google_calendar': decrypt_data(client_data['google_calendar_credentials']),
+                'google_meet': decrypt_data(client_data['google_meet_credentials']),
+                'whatsapp': decrypt_data(client_data['whatsapp_credentials']),
+                'supabase_url': client_data['supabase_url'],
+                'supabase_key': client_data['supabase_key']
+            }
+        }
+        
+        # Atualizar último login
+        supabase.table('client_users').update({
+            'last_login': 'now()'
+        }).eq('id', user_data['id']).execute()
+        
+        return session_data
+    
+    return None
+```
+
+### **B. Função para Conectar ao Supabase do Cliente**
+
+```python
+# Adicionar ao seu código existente
+
+def get_client_supabase():
+    """Retorna conexão Supabase específica do cliente logado"""
+    
+    # Pegar dados da sessão (adapte ao seu sistema)
+    client_credentials = get_current_client_credentials()
+    
+    if client_credentials and client_credentials.get('supabase_url'):
+        # Criar cliente específico do cliente
+        from supabase import create_client
+        client_supabase = create_client(
+            client_credentials['supabase_url'],
+            client_credentials['supabase_key']
+        )
+        return client_supabase
+    
+    return None
+
+def get_current_client_credentials():
+    """Retorna credenciais do cliente atual da sessão"""
+    # Adapte isso ao seu sistema de sessão atual
+    # Exemplo com Flask session:
+    # return session.get('client_credentials')
+    
+    # Exemplo com sistema customizado:
+    return current_session.get('client_credentials')
+```
+
+### **C. Modificar Suas Queries Existentes**
+
+```python
+# Onde você tem queries como:
+# conversations = supabase.table('conversations').select('*').execute()
+
+# Trocar por:
+def get_conversations():
+    """Busca conversas do cliente específico"""
+    client_supabase = get_client_supabase()
+    if client_supabase:
+        return client_supabase.table('conversations').select('*').execute()
+    return None
+
+def get_appointments():
+    """Busca agendamentos do cliente específico"""
+    client_supabase = get_client_supabase()
+    if client_supabase:
+        return client_supabase.table('appointments').select('*').execute()
+    return None
+
+# Aplicar o mesmo padrão para todas as suas queries
+```
+
+## 3. 🎛️ PÁGINA DE CONFIGURAÇÕES (Adicionar ao seu dashboard)
+
+```html
+<!-- Adicionar nova página: configuracoes.html -->
+<div class="configuracoes-container">
+    <h2>Configurações do Cliente</h2>
+    
+    <!-- Google Calendar -->
+    <div class="config-section">
+        <h3>Google Calendar</h3>
+        <form id="google-calendar-form">
+            <input type="text" name="client_id" placeholder="Client ID" 
+                   value="{{ current_credentials.google_calendar.client_id if current_credentials.google_calendar else '' }}">
+            <input type="password" name="client_secret" placeholder="Client Secret"
+                   value="{{ current_credentials.google_calendar.client_secret if current_credentials.google_calendar else '' }}">
+            <input type="text" name="calendar_id" placeholder="Calendar ID"
+                   value="{{ current_credentials.google_calendar.calendar_id if current_credentials.google_calendar else '' }}">
+            <button type="submit">Salvar Google Calendar</button>
+        </form>
+    </div>
+    
+    <!-- Google Meet -->
+    <div class="config-section">
+        <h3>Google Meet</h3>
+        <form id="google-meet-form">
+            <input type="text" name="client_id" placeholder="Client ID"
+                   value="{{ current_credentials.google_meet.client_id if current_credentials.google_meet else '' }}">
+            <input type="password" name="client_secret" placeholder="Client Secret"
+                   value="{{ current_credentials.google_meet.client_secret if current_credentials.google_meet else '' }}">
+            <button type="submit">Salvar Google Meet</button>
+        </form>
+    </div>
+    
+    <!-- WhatsApp -->
+    <div class="config-section">
+        <h3>WhatsApp Business</h3>
+        <form id="whatsapp-form">
+            <input type="text" name="phone_number" placeholder="Número WhatsApp"
+                   value="{{ current_credentials.whatsapp.phone_number if current_credentials.whatsapp else '' }}">
+            <input type="password" name="api_key" placeholder="API Key"
+                   value="{{ current_credentials.whatsapp.api_key if current_credentials.whatsapp else '' }}">
+            <button type="submit">Salvar WhatsApp</button>
+        </form>
+    </div>
+</div>
+
+<script>
+// JavaScript para salvar configurações
+document.getElementById('google-calendar-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    salvarCredencial('google_calendar_credentials', this);
+});
+
+document.getElementById('google-meet-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    salvarCredencial('google_meet_credentials', this);
+});
+
+document.getElementById('whatsapp-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    salvarCredencial('whatsapp_credentials', this);
+});
+
+function salvarCredencial(tipo, form) {
+    const formData = new FormData(form);
+    const credenciais = {};
+    
+    for (let [key, value] of formData.entries()) {
+        credenciais[key] = value;
+    }
+    
+    fetch('/api/salvar-credencial', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            tipo: tipo,
+            credenciais: credenciais
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('Credenciais salvas com sucesso!');
+        } else {
+            alert('Erro: ' + data.error);
+        }
+    });
+}
+</script>
+```
+
+## 4. 🔌 API Para Salvar Credenciais
+
+```python
+# Adicionar essa rota ao seu sistema atual
+
+def salvar_credencial_cliente():
+    """API para salvar credenciais específicas do cliente"""
+    
+    data = request.json
+    tipo_credencial = data.get('tipo')
+    credenciais = data.get('credenciais')
+    
+    # Pegar client_id da sessão atual
+    client_id = get_current_client_id()
+    
+    if not client_id:
+        return {'success': False, 'error': 'Cliente não identificado'}
+    
+    try:
+        # Criptografar credenciais
+        credenciais_criptografadas = encrypt_data(credenciais)
+        
+        # Salvar no banco
+        result = supabase.table('clients').update({
+            tipo_credencial: credenciais_criptografadas,
+            'updated_at': 'now()'
+        }).eq('id', client_id).execute()
+        
+        if result.data:
+            return {'success': True}
+        else:
+            return {'success': False, 'error': 'Erro ao salvar'}
+            
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+```
+
+## 5. 🔄 Script para Migrar Clientes Existentes
+
+```python
+# Script para adicionar seus clientes atuais ao novo sistema
+
+def migrar_clientes_existentes():
+    """Migra clientes existentes para o novo sistema multi-tenant"""
+    
+    clientes_atuais = [
+        {
+            'client_name': 'Cliente A',
+            'client_email': 'cliente.a@email.com',
+            'password': 'senha123',
+            'supabase_url': 'https://projeto-a.supabase.co',
+            'supabase_key': 'chave-anon-projeto-a'
+        },
+        {
+            'client_name': 'Cliente B', 
+            'client_email': 'cliente.b@email.com',
+            'password': 'senha456',
+            'supabase_url': 'https://projeto-b.supabase.co',
+            'supabase_key': 'chave-anon-projeto-b'
+        }
+        # Adicionar todos os seus clientes...
+    ]
+    
+    for cliente in clientes_atuais:
+        # Criar cliente
+        client_result = supabase.table('clients').insert({
+            'client_name': cliente['client_name'],
+            'client_email': cliente['client_email'],
+            'supabase_url': cliente['supabase_url'],
+            'supabase_key': cliente['supabase_key']
+        }).execute()
+        
+        if client_result.data:
+            client_id = client_result.data[0]['id']
+            
+            # Criar usuário para este cliente
+            password_hash = hashlib.sha256(cliente['password'].encode()).hexdigest()
+            
+            supabase.table('client_users').insert({
+                'client_id': client_id,
+                'user_email': cliente['client_email'],
+                'user_password_hash': password_hash,
+                'role': 'admin'
+            }).execute()
+    
+    print("Migração concluída!")
+```
+
+## 6. 📝 VARIÁVEIS DE AMBIENTE ADICIONAIS
+
+```bash
+# Adicionar ao seu .env existente
+ENCRYPTION_KEY=gAAAAABhZ5J9X8Y2K3L4M5N6O7P8Q9R0S1T2U3V4W5X6Y7Z8A9B0
+```
+
+## 🎯 RESUMO DA IMPLEMENTAÇÃO
+
+### **O QUE MUDA NO SEU DASHBOARD:**
+
+1. **Login:** Identifica qual cliente está logando
+2. **Sessão:** Armazena credenciais específicas do cliente  
+3. **Queries:** Conecta automaticamente ao Supabase do cliente
+4. **Configurações:** Nova página para gerenciar credenciais
+5. **Isolamento:** Cada cliente vê apenas seus dados
+
+### **FLUXO APÓS IMPLEMENTAÇÃO:**
+
+1. Cliente faz login → Sistema identifica qual cliente é
+2. Carrega credenciais específicas dele (Google, WhatsApp, etc.)
+3. Conecta no Supabase específico dele
+4. Dashboard mostra apenas dados dele
+5. Na página de configurações ele pode alterar suas credenciais
+
+### **VANTAGENS:**
+
+✅ **Um dashboard único** para todos os clientes  
+✅ **Isolamento total** de dados por cliente  
+✅ **Credenciais específicas** por cliente  
+✅ **Fácil manutenção** - um código apenas  
+✅ **Escalável** - adicionar novos clientes é simples
+
+Precisa de ajuda com alguma parte específica da implementação? [[memory:693145]]
